@@ -37,5 +37,7 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${assets[@]}" --clobber
           else
-            gh release create "$TAG" "${assets[@]}" --title "geoclash $TAG" --generate-notes --verify-tag
+            # 发布说明取自上一个 tag 以来的提交信息
+            bash scripts/release-notes.sh "$TAG" > "$RUNNER_TEMP/notes.md"
+            gh release create "$TAG" "${assets[@]}" --title "geoclash $TAG" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
           fi
