@@ -165,6 +165,7 @@ verge-mihomo -d /Library/Application Support/clash-verge-service/users/501/runti
   - 然后照常刷新 provider；出现新国家时更新脚本并热重载。
   - 文件被重写但节点没有变化时只记录日志。订阅链接（`sources.url`）不在监视范围内，由定期完整检测负责。
   - 没有采用 mihomo 的 `/logs` 事件流：Verge 与 mihomo 都没有专门的订阅更新事件，日志文本也不是稳定接口。
+- **启动时立即接入**：已有上次的检测结果时，启动后先用它接入 Clash（写入脚本区块、热重载或刷新 provider），再开始新一轮检测。升级、重启、开机自启后分组马上可用；全新安装没有结果，需等第一轮检测完成。
 - 完整检测：内置定时器，**每 6 小时一次**，用于发现已有节点出口位置的变化；启动时先执行一轮；也可以通过状态页按钮、`POST /api/refresh` 或 `geoclash refresh` 手动触发。
 - 用 worker pool 并发检测（默认并发 16，单次请求超时 10s），实测 76 个节点约 25 秒完成。
 - **本轮重试**（`probe.retries`，默认 1）：主检测结束后，失败的节点在本轮内再检测一次。实测中部分家宽节点时通时断，单次失败就会被移出国家组长达一个检测间隔。
@@ -500,11 +501,13 @@ provider 中的节点是订阅节点的**副本**，名称为实测格式（如 
 
 ```
 geoclash run        前台运行（默认命令）
-geoclash install [--here]
+geoclash install [--here] [--wait]
                     把程序复制到 ~/.geoclash/ 并安装开机自启、在后台启动；
-                    --here 表示程序留在当前位置，数据也放在当前位置
+                    --here 表示程序留在当前位置，数据也放在当前位置；
+                    --wait 表示等实测分组接入 Clash 后再返回（最长 5 分钟）
 geoclash uninstall  移除开机自启、停止后台进程、移除 Verge 脚本中的 geoclash 区块
-geoclash start      在后台启动
+geoclash start [--wait]
+                    在后台启动
 geoclash stop       停止后台进程
 geoclash status     查看运行状态、自启状态、上一轮检测摘要
 geoclash refresh    立即触发一轮检测（请求正在运行的实例）
@@ -680,6 +683,8 @@ scripts/build.sh              多平台交叉编译（输出到 dist/）
 | 新增文件看门狗（`watch` 默认 30s，`watch-debounce` 默认 10s）与增量检测 | 订阅更新后不必等 6 小时（见第 15 节决策 19） |
 | 实测分组放在分组列表最前面（原为末尾） | 用户要求，便于在 Clash 界面中查找 |
 | macOS / Linux 从运行中的内核进程读取 controller 地址 | Mac 上 Verge 服务模式的 socket 位于 `/var/run/clash-verge-service/users/<uid>/`，与运行时配置不一致，导致无法热重载 |
+| 启动时用上次的检测结果立即接入；`install` / `start` 提示接入时机，新增 `--wait` | 全新安装后约 1 分钟才接入，用户以为没有生效 |
+| 添加 MIT 许可证；GitHub Actions：推送 / PR 时三平台测试，推送 `v*` tag 时自动构建并发布 Release | 公开仓库需要许可证；发布不再依赖本地构建 |
 | 换密码的节点继承原有结果；全部失败时等待 60 秒重测 | Mac 唤醒后订阅更新，所有节点标识改变且网络未就绪，一次增量检测全部失败 |
 | goja 固定为 2025-01 的版本，`x/sys` 保持 mihomo 使用的版本 | 兼容 Go 1.23；新版依赖要求 Go 1.26 |
 

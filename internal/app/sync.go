@@ -159,6 +159,11 @@ func (a *App) syncClash(ctx context.Context, env *discover.Env, snap *Snapshot) 
 		}
 	}
 	notices = append(notices, a.attachNotices(proxies)...)
+	// 确认实测分组已加载到内核（热重载后需要重新读取）
+	if latest, err := ctl.Proxies(ctx); err == nil {
+		_, ok := latest[a.cfg.SelectorName]
+		a.synced.Store(ok)
+	}
 	return notices
 }
 

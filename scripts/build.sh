@@ -8,7 +8,7 @@
 #   dist/geoclash_<版本>_windows_<arch>.zip  Windows 发布包
 #   dist/SHA256SUMS                          发布包校验和
 #
-# 发布包由 scripts/pack 生成：程序统一命名为 geoclash(.exe) 并带可执行权限，附带中英文 README。
+# 发布包由 scripts/pack 生成：程序统一命名为 geoclash(.exe) 并带可执行权限，附带中英文 README 与 LICENSE。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -37,7 +37,7 @@ for t in "${TARGETS[@]}"; do
   CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "$ldflags" -o "$bin" .
 
   pkg="geoclash_${VERSION}_${os}_${arch}"
-  go run ./scripts/pack "dist/${pkg}.${ext}" "$pkg" "${bin}:${name}" README.md README.zh-CN.md
+  go run ./scripts/pack "dist/${pkg}.${ext}" "$pkg" "${bin}:${name}" README.md README.zh-CN.md LICENSE
 done
 
 (cd dist && sha256sum geoclash_*.tar.gz geoclash_*.zip > SHA256SUMS)

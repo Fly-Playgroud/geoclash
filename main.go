@@ -40,10 +40,11 @@ const usage = `geoclash —— 按实测出口归属地为 Clash 节点分组
 
 命令：
   run           前台运行（默认命令）
-  install       [--here]  把程序复制到 %s 并安装开机自启、在后台启动；
-                --here 表示程序留在当前位置，数据也放在当前位置
+  install       [--here] [--wait]  把程序复制到 %s 并安装开机自启、在后台启动；
+                --here 表示程序留在当前位置，数据也放在当前位置；
+                --wait 表示等实测分组接入 Clash 后再返回
   uninstall     移除开机自启、停止后台进程、移除 Verge 脚本中的 geoclash 区块
-  start         在后台启动
+  start         [--wait]  在后台启动
   stop          停止后台进程
   status        查看运行状态、自启状态、上一轮检测摘要
   refresh       立即触发一轮检测
@@ -113,6 +114,7 @@ type options struct {
 	log            string
 	allProfiles    bool
 	here           bool // install：程序留在原位置，不复制到默认目录
+	wait           bool // install / start：等实测分组接入 Clash 后再返回
 	configExplicit bool // 通过 -c 指定了配置文件
 	logExplicit    bool // 通过 -log 指定了日志文件
 }
@@ -141,6 +143,8 @@ func parseArgs(args []string) (options, []string, error) {
 			o.allProfiles = true
 		case "--here":
 			o.here = true
+		case "--wait":
+			o.wait = true
 		case "-h", "--help":
 			printUsage()
 			os.Exit(0)
@@ -344,6 +348,42 @@ func (c *api) waitUp(d time.Duration) bool {
 	return false
 }
 
+// syncWait 是 --wait 等待实测分组接入 Clash 的最长时间（包含全新安装时的第一轮检测）。
+const syncWait = 5 * time.Minute
+
+// reportSync 说明实测分组何时接入 Clash；--wait 时等到接入完成再返回。
+func (c *api) reportSync(o options) error {
+	// 已有检测结果时，启动后会立即接入，稍等片刻
+	var h server.Health
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(300 * time.Millisecond) {
+		if hh, ok := c.health(); ok {
+			h = hh
+			if h.Synced {
+				break
+			}
+		}
+	}
+	switch {
+	case h.Synced:
+		fmt.Printf("已接入 Clash：%d 个实测分组，正在后台重新检测\n", h.Groups)
+		return nil
+	case !o.wait && h.Groups > 0:
+		fmt.Println("正在用上次的检测结果接入 Clash；如果没有生效，请用 geoclash status 查看提示")
+		return nil
+	case !o.wait:
+		fmt.Println("首次检测约需 1 分钟，完成后会自动接入 Clash（加 --wait 可等待完成）")
+		return nil
+	}
+	fmt.Println("等待首次检测完成并接入 Clash…")
+	for end := time.Now().Add(syncWait); time.Now().Before(end); time.Sleep(2 * time.Second) {
+		if hh, ok := c.health(); ok && hh.Synced {
+			fmt.Printf("已接入 Clash：%d 个实测分组\n", hh.Groups)
+			return nil
+		}
+	}
+	return fmt.Errorf("%s 内没有接入 Clash，请用 geoclash status 查看提示，或查看日志：%s", syncWait, o.log)
+}
+
 func (c *api) waitDown(d time.Duration) bool {
 	for end := time.Now().Add(d); time.Now().Before(end); time.Sleep(300 * time.Millisecond) {
 		if _, ok := c.health(); !ok {
@@ -493,12 +533,12 @@ func cmdInstall(o options) error {
 	_, detail := autostart.Status()
 	fmt.Println("数据目录：", filepath.Dir(o.config))
 	fmt.Println("已安装开机自启：", detail)
-	if c.waitUp(15 * time.Second) {
-		fmt.Println("已在后台启动：", c.base)
-	} else {
+	if !c.waitUp(15 * time.Second) {
 		fmt.Println("后台进程尚未就绪，请查看日志：", o.log)
+		return nil
 	}
-	return nil
+	fmt.Println("已在后台启动：", c.base)
+	return c.reportSync(o)
 }
 
 // copyFileRetry 复制程序；刚停止的进程可能还没释放文件，失败时重试几次。
@@ -603,8 +643,8 @@ func cmdStart(o options) error {
 	if !c.waitUp(15 * time.Second) {
 		return fmt.Errorf("启动超时，请查看日志：%s", o.log)
 	}
-	fmt.Printf("已在后台启动：%s\n", c.base)
-	return nil
+	fmt.Println("已在后台启动：", c.base)
+	return c.reportSync(o)
 }
 
 func cmdStop(o options) error {

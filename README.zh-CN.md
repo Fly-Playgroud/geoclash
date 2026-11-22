@@ -27,16 +27,16 @@ geoclash status
 - 自动写入 Verge 全局扩展脚本中的 geoclash 区块（与已有脚本串联，写入前备份为 `Script.js.geoclash.bak`）。
 - 分组集合变化时热重载内核；代理型分组首次挂接时自动切换到「🌍 实测国家」一次。
 
-首次安装后，需要等第一轮检测完成（约 1 分钟）才会接入 Clash。
+全新安装时，需要等第一轮检测完成（约 1 分钟）才会接入 Clash，`install` 加 `--wait` 可以等到接入完成再返回。升级、重启、开机自启时会先用上次的检测结果立即接入。
 
 ## 命令
 
 | 命令 | 说明 |
 |---|---|
 | `geoclash run` | 前台运行（默认命令） |
-| `geoclash install [--here]` | 复制程序到 `~/.geoclash/` 并开机自启、后台启动；`--here` 留在当前位置 |
+| `geoclash install [--here] [--wait]` | 复制程序到 `~/.geoclash/` 并开机自启、后台启动；`--here` 留在当前位置，`--wait` 等实测分组接入 Clash 后再返回 |
 | `geoclash uninstall` | 移除开机自启、停止进程、移除 Verge 脚本中的 geoclash 区块 |
-| `geoclash start` / `stop` | 在后台启动 / 停止 |
+| `geoclash start [--wait]` / `stop` | 在后台启动 / 停止 |
 | `geoclash status` | 运行状态、自启状态、上一轮检测摘要 |
 | `geoclash refresh` | 立即检测一轮 |
 | `geoclash reset-switch [组名…] [--all-profiles]` | 清除切换记录，重新执行一次「首次自动切换」 |
@@ -60,10 +60,16 @@ geoclash status
 ```bash
 go test ./...
 scripts/build.sh           # 版本号取自 git describe；也可以手动指定，如 scripts/build.sh 0.2.0
-                           # 输出 6 个平台的二进制到 dist/
+                           # 输出 6 个平台的二进制和发布包到 dist/
 ```
+
+发布由 GitHub Actions 完成：推送 `v*` tag 后自动运行测试、构建并打包全部平台，创建 GitHub Release 并上传压缩包与 `SHA256SUMS`。
 
 ## 注意事项
 
 - Clash 的 `find-process-mode` 不能为 `off`，否则 geoclash 的检测流量会被 TUN 再代理一层，测出的出口不正确。
 - 实测分组中的节点是订阅节点的副本，名称形如 `🇺🇸 洛杉矶 .23.7 | 日本07`；原节点仍保留在订阅自带的分组中。
+
+## 许可证
+
+[MIT](LICENSE)

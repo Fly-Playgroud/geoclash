@@ -52,6 +52,7 @@ type App struct {
 	mu      sync.Mutex // 串行化检测轮次与切换操作
 	snap    atomic.Pointer[Snapshot]
 	running atomic.Bool
+	synced  atomic.Bool // 实测分组已加载到 Clash 内核
 	trigger chan struct{}
 	lastFP  atomicString // 上次读取节点时来源文件的指纹
 }
@@ -119,6 +120,9 @@ func (a *App) Snapshot() *Snapshot { return a.snap.Load() }
 // Running 表示是否正在执行一轮检测。
 func (a *App) Running() bool { return a.running.Load() }
 
+// Synced 表示实测分组是否已加载到 Clash 内核。
+func (a *App) Synced() bool { return a.synced.Load() }
+
 func (a *App) publish(s *Snapshot) { a.snap.Store(s) }
 
 // Trigger 请求立即执行一轮检测；已有待执行的请求时忽略。
@@ -132,6 +136,7 @@ func (a *App) Trigger() {
 // Run 立即执行一轮完整检测，然后按间隔循环；同时按 watch 间隔检查节点来源文件，
 // 文件变化时执行增量检测。直到 ctx 结束。
 func (a *App) Run(ctx context.Context) {
+	a.initialSync(ctx)
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	var watch <-chan time.Time
@@ -160,6 +165,26 @@ func (a *App) Run(ctx context.Context) {
 		}
 		a.Round(ctx)
 		timer.Reset(a.cfg.Interval.D())
+	}
+}
+
+// initialSync 启动时如果已有上次的检测结果，立即用它接入 Clash（写入脚本区块、热重载或刷新 provider），
+// 不必等第一轮检测完成。升级、重启、开机自启后分组马上可用；全新安装时没有结果，跳过。
+func (a *App) initialSync(ctx context.Context) {
+	snap := a.Snapshot()
+	if snap == nil || len(snap.Plan.Groups) == 0 {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.log.Printf("使用上次的检测结果接入 Clash（%d 个实测分组），随后开始新一轮检测", len(snap.Plan.Groups))
+	if notices := a.syncClash(ctx, snap.Env, snap); len(notices) > 0 {
+		s := *a.Snapshot()
+		s.Notices = append(append([]string(nil), s.Notices...), notices...)
+		a.publish(&s)
+	}
+	if err := a.store.Save(); err != nil {
+		a.log.Printf("保存状态失败：%v", err)
 	}
 }
 

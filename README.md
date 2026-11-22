@@ -29,7 +29,7 @@ Nothing needs to be configured by default:
 - Writes a geoclash block into the Verge global extension script. It is chained after your existing script, and the original is backed up as `Script.js.geoclash.bak`.
 - Hot-reloads the kernel when the set of groups changes. Proxy-type groups are switched to `🌍 实测国家` once, the first time they are attached.
 
-After the first install, it takes about a minute (the first check) before the groups show up in Clash.
+After a fresh install, the groups show up in Clash once the first check finishes (about a minute); add `--wait` to `install` to wait for it. Upgrades, restarts and autostart use the previous results and take effect immediately.
 
 ### How it works
 
@@ -43,9 +43,9 @@ After the first install, it takes about a minute (the first check) before the gr
 | Command | Description |
 |---|---|
 | `geoclash run` | Run in the foreground (default command) |
-| `geoclash install [--here]` | Copy the binary to `~/.geoclash/`, install autostart and start in the background; `--here` keeps it where it is |
+| `geoclash install [--here] [--wait]` | Copy the binary to `~/.geoclash/`, install autostart and start in the background; `--here` keeps it where it is, `--wait` waits until the groups are loaded into Clash |
 | `geoclash uninstall` | Remove autostart, stop the process, and remove the geoclash block from the Verge script |
-| `geoclash start` / `stop` | Start / stop in the background |
+| `geoclash start [--wait]` / `stop` | Start / stop in the background |
 | `geoclash status` | Running state, autostart state, summary of the last check |
 | `geoclash refresh` | Run a check now |
 | `geoclash reset-switch [group…] [--all-profiles]` | Clear switch records so the "first-time auto switch" runs again |
@@ -79,10 +79,16 @@ Requires Go 1.23 or later.
 ```bash
 go test ./...
 scripts/build.sh           # version from git describe; or set it explicitly, e.g. scripts/build.sh 0.2.0
-                           # binaries for 6 platforms are written to dist/
+                           # binaries and release archives for 6 platforms are written to dist/
 ```
+
+Releases are built by GitHub Actions: pushing a `v*` tag runs the tests, builds and packages all platforms, and publishes a GitHub Release with the archives and `SHA256SUMS`.
 
 ## Notes
 
 - Clash's `find-process-mode` must not be `off`. Otherwise geoclash's probe traffic is captured by TUN and proxied again, and the measured exit is wrong.
 - Nodes in the measured groups are copies of the subscription nodes, named like `🇺🇸 洛杉矶 .23.7 | 日本07` (flag, city, exit IP tail, original name). The original nodes stay in the groups that came with the subscription.
+
+## License
+
+[MIT](LICENSE)

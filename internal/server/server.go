@@ -130,11 +130,16 @@ func (s *Server) script(w http.ResponseWriter, _ *http.Request) {
 type Health struct {
 	PID     int    `json:"pid"`
 	Version string `json:"version"`
-	Running bool   `json:"running"`
+	Running bool   `json:"running"` // 正在检测
+	Synced  bool   `json:"synced"`  // 实测分组已加载到 Clash 内核
+	Groups  int    `json:"groups"`  // 当前实测分组数（来自本次或上次的检测结果）
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, Health{PID: os.Getpid(), Version: s.version, Running: s.app.Running()})
+	writeJSON(w, http.StatusOK, Health{
+		PID: os.Getpid(), Version: s.version, Running: s.app.Running(),
+		Synced: s.app.Synced(), Groups: len(s.app.Snapshot().Plan.Groups),
+	})
 }
 
 func (s *Server) refresh(w http.ResponseWriter, _ *http.Request) {
