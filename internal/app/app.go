@@ -341,6 +341,16 @@ func (a *App) finish(ctx context.Context, env *discover.Env, envErr error, errs 
 // probeAll 并发检测全部节点；失败的节点在本轮内按 retries 重试，应对时通时断的节点。
 func (a *App) probeAll(ctx context.Context, nodes []source.Node) map[string]probe.Result {
 	results := a.probePass(ctx, nodes)
+	// 全部失败多半是网络尚未就绪（例如刚从睡眠中唤醒，Clash 就更新了订阅），等一会儿再整体重测一次
+	if len(nodes) >= 3 && countOK(results) == 0 && ctx.Err() == nil {
+		a.log.Printf("全部 %d 个节点检测失败，可能网络尚未就绪，%s 后重试", len(nodes), outageWait)
+		select {
+		case <-ctx.Done():
+			return results
+		case <-time.After(outageWait):
+		}
+		results = a.probePass(ctx, nodes)
+	}
 	for i := 0; i < a.cfg.Probe.Retries && ctx.Err() == nil; i++ {
 		var failed []source.Node
 		for _, n := range nodes {
@@ -359,6 +369,19 @@ func (a *App) probeAll(ctx context.Context, nodes []source.Node) map[string]prob
 		}
 	}
 	return results
+}
+
+// outageWait 是全部节点检测失败时，整体重测前的等待时间。
+const outageWait = 60 * time.Second
+
+func countOK(results map[string]probe.Result) int {
+	n := 0
+	for _, r := range results {
+		if r.OK() {
+			n++
+		}
+	}
+	return n
 }
 
 func (a *App) probePass(ctx context.Context, nodes []source.Node) map[string]probe.Result {

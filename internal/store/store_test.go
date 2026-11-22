@@ -119,3 +119,28 @@ func TestIncrementalApply(t *testing.T) {
 		t.Errorf("Keys = %v", keys)
 	}
 }
+
+// 订阅更新后节点密码变化（标识改变）但名称、协议、服务器、端口不变：继承原有结果，检测失败时仍计入分组。
+func TestInheritOnCredentialRotation(t *testing.T) {
+	s, _ := Open(filepath.Join(t.TempDir(), "state.json"))
+	old := source.Node{Name: "美国01", Mapping: map[string]any{"name": "美国01", "type": "hysteria2", "server": "a.example", "port": 443, "password": "old"}}
+	s.ApplyRound([]source.Node{old}, map[string]probe.Result{NodeKey(old.Mapping): {Country: "US", City: "洛杉矶", IP: "1.1.1.1"}})
+
+	rotated := source.Node{Name: "美国01", Mapping: map[string]any{"name": "美国01", "type": "hysteria2", "server": "a.example", "port": 443, "password": "new"}}
+	k := NodeKey(rotated.Mapping)
+	if k == NodeKey(old.Mapping) {
+		t.Fatal("密码不同，标识应不同")
+	}
+	s.ApplyRound([]source.Node{rotated}, map[string]probe.Result{k: {Err: "network down"}})
+	st := s.Nodes()[0]
+	if st.Key != k || st.Country != "US" || st.City != "洛杉矶" || st.FailCount != 1 || !st.Effective(2) {
+		t.Errorf("应继承原有结果并仍计入分组：%+v", st)
+	}
+
+	// 名称或服务器不同则不继承
+	other := source.Node{Name: "美国02", Mapping: map[string]any{"name": "美国02", "type": "hysteria2", "server": "b.example", "port": 443}}
+	s.ApplyRound([]source.Node{other}, map[string]probe.Result{NodeKey(other.Mapping): {Err: "x"}})
+	if st := s.Nodes()[0]; st.Country != "" {
+		t.Errorf("不同节点不应继承：%+v", st)
+	}
+}

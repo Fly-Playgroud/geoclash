@@ -92,6 +92,16 @@ Clash Verge Rev ◄┘
 
 同时读取 `secret`。这些字段也可以在配置文件中手动覆盖。
 
+**从运行中的内核读取实际地址（macOS / Linux）**：Clash Verge Rev 以服务模式运行时，内核由服务以 root 身份启动，并通过命令行参数使用另一个 controller 地址，运行时配置中写的地址并不存在。例如 macOS 上：
+
+```
+verge-mihomo -d /Library/Application Support/clash-verge-service/users/501/runtime
+             -f .../runtime/config.yaml
+             -ext-ctl-unix /var/run/clash-verge-service/users/501/verge-mihomo.sock
+```
+
+运行时配置中写的却是 `$TMPDIR/verge-mihomo.sock`。macOS / Linux 的 `ps` 能看到 root 进程的命令行，因此 geoclash 用 `ps -A -ww -o args=` 找到内核进程，解析 `-ext-ctl` / `-ext-ctl-unix` / `-ext-ctl-pipe`，优先使用其中的地址（配置了 TCP 地址时仍用 TCP）。同时解析出的 `-d` 即内核工作目录，provider 缓存位于其下的 `geoclash/`。读取失败时依次尝试 `/var/run/clash-verge-service/users/<uid>/verge-mihomo.sock` 及下述枚举。
+
 **命名管道 / unix socket 校验**：Clash Verge Rev 以服务模式运行时，内核实际使用的管道名（`verge-mihomo-production-<hash>`）与运行时配置中写的（`verge-mihomo-sidecar-release-<hash>`）不同。因此配置中的管道不存在时，geoclash 会枚举系统中 `verge-mihomo` 开头的管道，优先选择哈希后缀相同的那个；unix socket 同理，在同目录和 `/tmp/verge` 下寻找 `verge-mihomo*.sock`。
 
 ## 4. 实际归属地的检测
@@ -159,6 +169,8 @@ Clash Verge Rev ◄┘
 - 用 worker pool 并发检测（默认并发 16，单次请求超时 10s），实测 76 个节点约 25 秒完成。
 - **本轮重试**（`probe.retries`，默认 1）：主检测结束后，失败的节点在本轮内再检测一次。实测中部分家宽节点时通时断，单次失败就会被移出国家组长达一个检测间隔。
 - 一开始就连续两个接口失败时，判定节点不可用，不再查询其余接口。
+- **疑似断网**：一轮（或一次增量）检测中至少 3 个节点且全部失败时，多半是网络尚未就绪（例如刚从睡眠中唤醒，Clash 立即更新了订阅），等待 60 秒后整体重测一次。
+- **节点换密码时继承结果**：机场更新订阅时常常更换节点密码，节点标识随之改变。新节点的名称、协议、服务器、端口与某个被删除的节点完全相同时，视为同一个节点，先继承其国家、城市等结果（以及连续失败轮数），再按本次检测结果更新。这样即使本次检测失败，节点也不会立即离开分组。
 - **防抖动**：节点偶尔检测失败时保留上次的结果，连续失败 N 轮（默认 2）才从国家组中移出。真正失效的节点由 Clash 的 url-test 健康检查跳过。
 - 「剩余流量」「套餐到期」之类的信息节点本身连不通，会被自动排除；另外支持配置正则手动排除。
 - 检测结果持久化到本地 JSON 文件，程序重启后可以立即提供上次的结果。
@@ -667,6 +679,8 @@ scripts/build.sh              多平台交叉编译（输出到 dist/）
 | 构建脚本只删除 `dist/geoclash-*`，不再清空整个 `dist/` | 数据可能与程序一起放在 `dist/` |
 | 新增文件看门狗（`watch` 默认 30s，`watch-debounce` 默认 10s）与增量检测 | 订阅更新后不必等 6 小时（见第 15 节决策 19） |
 | 实测分组放在分组列表最前面（原为末尾） | 用户要求，便于在 Clash 界面中查找 |
+| macOS / Linux 从运行中的内核进程读取 controller 地址 | Mac 上 Verge 服务模式的 socket 位于 `/var/run/clash-verge-service/users/<uid>/`，与运行时配置不一致，导致无法热重载 |
+| 换密码的节点继承原有结果；全部失败时等待 60 秒重测 | Mac 唤醒后订阅更新，所有节点标识改变且网络未就绪，一次增量检测全部失败 |
 | goja 固定为 2025-01 的版本，`x/sys` 保持 mihomo 使用的版本 | 兼容 Go 1.23；新版依赖要求 Go 1.26 |
 
 ### 16.2 验证结果（2026-11-22）

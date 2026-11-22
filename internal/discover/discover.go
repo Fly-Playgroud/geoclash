@@ -36,6 +36,7 @@ type Env struct {
 	RuntimeConfig string // 内核实际加载的配置
 	GlobalScript  string // Verge 全局扩展脚本；非 Verge 环境为空
 	Controller    Controller
+	Kernel        Kernel // 从运行中的内核进程读取的信息（macOS / Linux）；读取不到时为空
 }
 
 // ErrNotFound 表示本机没有找到受支持的 Clash 环境。
@@ -131,7 +132,8 @@ func loadVerge(dir string) (*Env, error) {
 	if env.ProfileFile == "" {
 		return env, fmt.Errorf("Clash Verge Rev（%s）没有激活的订阅", dir)
 	}
-	env.Controller = ControllerFromConfig(env.RuntimeConfig)
+	env.Kernel = findKernel("verge-mihomo")
+	env.Controller = withKernel(ControllerFromConfig(env.RuntimeConfig), env.Kernel)
 	return env, nil
 }
 
@@ -143,8 +145,21 @@ func loadMihomo(path string) (*Env, error) {
 		ProfileFile:   path,
 		RuntimeConfig: path,
 	}
-	env.Controller = ControllerFromConfig(path)
+	env.Kernel = findKernel("")
+	env.Controller = withKernel(ControllerFromConfig(path), env.Kernel)
 	return env, nil
+}
+
+// withKernel 用运行中内核实际监听的 controller 地址替换配置文件中的命名管道 / unix socket。
+// Clash Verge Rev 以服务模式运行时，内核通过命令行参数使用另一个地址（例如 macOS 上的
+// /var/run/clash-verge-service/users/<uid>/verge-mihomo.sock），配置文件中写的地址并不存在。
+// 配置了 TCP 地址时保持不变。
+func withKernel(c Controller, k Kernel) Controller {
+	if k.Controller == "" || strings.HasPrefix(c.URL, "http://") {
+		return c
+	}
+	c.URL = k.Controller
+	return c
 }
 
 // ControllerFromConfig 从内核配置中读取 controller 地址，优先级：TCP → 命名管道 → unix socket。

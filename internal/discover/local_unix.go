@@ -3,6 +3,7 @@
 package discover
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,11 +11,20 @@ import (
 
 func resolvePipe(configured string) string { return configured }
 
-// resolveSocket 校验 unix socket 是否存在；不存在时在同目录和 /tmp/verge 下寻找 verge-mihomo*.sock
-// （Clash Verge Rev 的服务模式与普通模式使用的 socket 可能不同）。
+func isSocket(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.Mode()&os.ModeSocket != 0
+}
+
+// resolveSocket 校验 unix socket 是否存在；不存在时依次寻找 Clash Verge Rev 服务模式的固定位置
+// （/var/run/clash-verge-service/users/<uid>/verge-mihomo.sock）以及同目录、/tmp/verge 下的 verge-mihomo*.sock。
+// 正常情况下会先从运行中的内核进程读到实际地址（见 withKernel），这里是读取失败时的兜底。
 func resolveSocket(configured string) string {
-	if st, err := os.Stat(configured); err == nil && st.Mode()&os.ModeSocket != 0 {
+	if isSocket(configured) {
 		return configured
+	}
+	if p := fmt.Sprintf("/var/run/clash-verge-service/users/%d/verge-mihomo.sock", os.Getuid()); isSocket(p) {
+		return p
 	}
 	for _, dir := range []string{filepath.Dir(configured), "/tmp/verge"} {
 		matches, _ := filepath.Glob(filepath.Join(dir, "verge-mihomo*.sock"))

@@ -783,6 +783,9 @@ func cmdDiscover(o options) error {
 	fmt.Println("  数据目录：  ", env.Home)
 	fmt.Println("  当前订阅：  ", env.ProfileName, "—", env.ProfileFile)
 	fmt.Println("  运行时配置：", env.RuntimeConfig)
+	if env.Kernel.Home != "" {
+		fmt.Println("  内核目录：  ", env.Kernel.Home, "（provider 缓存位于其下的 geoclash/）")
+	}
 	if env.GlobalScript != "" {
 		fmt.Println("  全局脚本：  ", env.GlobalScript)
 	}

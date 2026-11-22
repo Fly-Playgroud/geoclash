@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -147,6 +148,18 @@ func (s *Store) ApplyRound(nodes []source.Node, results map[string]probe.Result)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
+	// 本次将被删除的旧节点，按身份（名称、协议、服务器、端口）索引：机场更新订阅时常常更换节点密码，
+	// 节点标识随之改变，但它仍是同一个节点，先继承原有结果，避免分组在重新检测前被清空
+	current := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		current[NodeKey(n.Mapping)] = true
+	}
+	retired := map[string]*NodeState{}
+	for k, st := range s.d.Nodes {
+		if !current[k] {
+			retired[identity(st.Name, st.Mapping)] = st
+		}
+	}
 	keep := make(map[string]*NodeState, len(nodes))
 	for i, n := range nodes {
 		key := NodeKey(n.Mapping)
@@ -156,6 +169,10 @@ func (s *Store) ApplyRound(nodes []source.Node, results map[string]probe.Result)
 		st := s.d.Nodes[key]
 		if st == nil {
 			st = &NodeState{Key: key}
+			if old := retired[identity(n.Name, n.Mapping)]; old != nil {
+				st.Country, st.City, st.IP, st.Confident = old.Country, old.City, old.IP, old.Confident
+				st.Answers, st.LastOK, st.CheckedAt, st.FailCount = old.Answers, old.LastOK, old.CheckedAt, old.FailCount
+			}
 		}
 		st.Order, st.Name, st.Source, st.Mapping = i, n.Name, n.Source, n.Mapping
 		if r, probed := results[key]; probed {
@@ -195,6 +212,11 @@ func (s *Store) Keys() map[string]bool {
 		out[k] = true
 	}
 	return out
+}
+
+// identity 返回节点的身份：名称、协议、服务器、端口相同即视为同一个节点（不含密码等凭据）。
+func identity(name string, m map[string]any) string {
+	return fmt.Sprint(name, "\x00", m["type"], "\x00", m["server"], "\x00", m["port"])
 }
 
 // pruneCities 只保留仍被节点使用的出口 IP 的城市缓存。
